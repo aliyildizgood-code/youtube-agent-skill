@@ -9,8 +9,9 @@ that leaks at the dead one, and averaging hides that.
     python3 hookscore.py --hook "one line"    # score a single hook
     python3 hookscore.py --json hooks.txt     # machine-readable
 
-WHAT THIS CAN AND CANNOT TELL YOU. Measured against 74 real short-form hooks (first 15 seconds of
-auto-captions, top-8 and bottom-8 by views across five channels): it separates deliberately bad
+WHAT THIS CAN AND CANNOT TELL YOU. Calibrated by the author against 74 real short-form hooks (first 15
+seconds of auto-captions, top-8 and bottom-8 by views across five channels; that dataset is not
+included in this repo, so the figure is reported, not reproducible here): it separates deliberately bad
 hooks from real ones well, and it separates a creator's own hits from their own misses barely at
 all. Treat a low score as a reason to look again, never a high score as a promise.
 """
@@ -19,14 +20,16 @@ import json, os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 FORMULAS = json.load(open(os.path.join(HERE, "hooks.json")))["hooks"]
 
-FILLER = {"basically","actually","literally","just","really","very","so","kind","sort","like",
-          "guys","hey","welcome","today","video","subscribe","channel"}
+# Always filler in a hook, and soft filler that only counts when it opens the line ("So basically,
+# just...") - "like", "just" and "so" mid-sentence are ordinary words.
+FILLER = {"basically","literally","guys","hey","welcome","today","video","subscribe","channel"}
+SOFT_FILLER = {"actually","just","really","very","so","kind","sort","like"}
 VAGUE = {"amazing","incredible","insane","crazy","huge","massive","game","changer","secret",
          "powerful","ultimate","best","revolutionary","mind","blowing","unbelievable"}
 CONCRETE = re.compile(r"\b(\d[\d,.]*\s?(%|k|m|x|s|m|h)?|\$\d|\d+\s?(second|minute|hour|day|week|month|year)s?)\b", re.I)
 YOU = re.compile(r"\b(you|your|you're|youre|yourself)\b", re.I)
-STAKE = re.compile(r"\b(lose|lost|wasting|waste|quit|fail|broke|cost|risk|before|stop|never|die|dying|dead)\b", re.I)
-CURIOSITY = re.compile(r"\b(why|how|what|which|until|before|but|nobody|almost|except|reason|actually)\b", re.I)
+STAKE = re.compile(r"\b(lose|lost|wasting|waste|quit|fail|broke|cost|risk|stop|never|die|dying|dead)\b", re.I)
+CURIOSITY = re.compile(r"\b(why|how|what|which|until|but|nobody|almost|except|reason|actually)\b", re.I)
 
 def words(t): return re.findall(r"[a-z0-9'%$.]+", t.lower())
 
@@ -35,7 +38,7 @@ def specificity(t):
     if not w: return 0
     nums = len(CONCRETE.findall(t))
     vague = sum(1 for x in w if x in VAGUE)
-    filler = sum(1 for x in w if x in FILLER)
+    filler = sum(1 for x in w if x in FILLER) + sum(1 for x in w[:3] if x in SOFT_FILLER)
     s = 34 + nums * 22 - vague * 16 - filler * 5
     # proper nouns that are not sentence-initial read as named things
     s += min(18, 6 * sum(1 for x in t.split()[1:] if x[:1].isupper()))
@@ -107,7 +110,10 @@ def main():
     as_json = "--json" in a
     a = [x for x in a if x != "--json"]
     if "--hook" in a:
-        lines = [a[a.index("--hook") + 1]]
+        i = a.index("--hook")
+        if i + 1 >= len(a):
+            print("--hook needs the hook text, e.g. --hook \"one line\""); sys.exit(2)
+        lines = [a[i + 1]]
     elif a and os.path.exists(a[0]):
         lines = [l for l in open(a[0]).read().splitlines() if l.strip()]
     else:

@@ -18,7 +18,7 @@ channel, not by how big the channel is.
 Paste this into Claude:
 
 ```
-https://github.com/Jakeschincariol/youtube-agent-skill
+https://github.com/aliyildizgood-code/youtube-agent-skill
 
 Install this skill, then confirm /yt-script works.
 ```
@@ -26,14 +26,14 @@ Install this skill, then confirm /yt-script works.
 Or do it yourself, in Claude Code:
 
 ```bash
-git clone https://github.com/Jakeschincariol/youtube-agent-skill.git
+git clone https://github.com/aliyildizgood-code/youtube-agent-skill.git
 cp -r youtube-agent-skill/skills/yt-* ~/.claude/skills/
 ```
 
 Or as a plugin:
 
 ```
-/plugin marketplace add Jakeschincariol/youtube-agent-skill
+/plugin marketplace add aliyildizgood-code/youtube-agent-skill
 /plugin install youtube-agent
 ```
 
@@ -73,9 +73,13 @@ python3 skills/yt-script/hookscore.py --hook "one line"        # 5-property hook
 python3 skills/yt-package/title.py --title "..." --thumb "..." # title + thumbnail linter
 python3 skills/yt-edit/deadair.py transcript.srt               # edit decision list
 python3 skills/yt-chapters/chapters.py transcript.srt          # validated chapters
-python3 skills/yt-retention/retention.py retention.csv         # where they left, and why
+python3 skills/yt-retention/retention.py retention.csv         # where they left, and why (--transcript / --duration)
 python3 skills/yt-viral/swipe.py collected.json --min 2.0      # outliers by own-channel multiple
 ```
+
+Each skill folder is self-contained: the shared transcript parser and `hooks.json` are copied into
+the skills that use them, so you can install any one of them alone. Run the tests with
+`python3 -m unittest discover -s tests`; after editing a shared file run `tests/sync.sh`.
 
 ## The fine print
 
@@ -86,8 +90,8 @@ pack different from the LinkedIn and Instagram ones, where posting is not availa
 still not built here: every skill ends in a block you copy and a question — ship it, or change it?
 Anything that claims to run your channel unattended should be read with that distinction in mind.
 
-**`hookscore.py` is a heuristic, not a predictor.** The panel was built and calibrated against 74
-real short-form hooks (the first 15 seconds of auto-captions, top-8 and bottom-8 by views across
+**`hookscore.py` is a heuristic, not a predictor.** The author calibrated the panel against 74
+real short-form hooks (that dataset is not in this repo, so the figure is reported, not reproducible) (the first 15 seconds of auto-captions, top-8 and bottom-8 by views across
 five channels). It separates deliberately bad hooks from real ones well. It separates a given
 creator's hits from their own misses barely at all. A low score is a reason to look again; a high
 score is not a promise.

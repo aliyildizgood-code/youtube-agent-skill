@@ -6,37 +6,36 @@
 
 Finds three things and prints the cuts as a list you can act on, newest problem first:
   DEAD    gaps between spoken cues longer than the floor
-  FILLER  cues that are only filler ("um", "so yeah", "basically")
+  FILLER  cues that are only filler ("um", "you know", "so yeah"; a lone "Right." is kept)
   REPEAT  a sentence restarted - the second take of the same opening
 
 WHAT IT DOES NOT DO. It does not cut the file. It prints an EDL, the total it would remove, and the
 runtime you would land on, and you apply it in whatever editor you use. Nothing here touches media.
 """
 import json, os, re, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-FILLER_ONLY = re.compile(r"^[\s,.-]*((um+|uh+|er+|ah+|so|okay|ok|right|yeah|like|anyway|basically|"
-                         r"actually|you know|i mean|let me see|hold on)[\s,.-]*)+$", re.I)
+# Fillers that are never an answer on their own, and softer ones that only count when the cue is
+# nothing BUT filler words ("so yeah", "okay so"). A lone "Right." or "Okay." is usually a real beat
+# of the conversation, so it is left alone.
+STRICT = {"um", "umm", "uh", "uhh", "er", "erm", "ah", "hmm", "mm"}
+STRICT_PHRASES = ("you know", "i mean", "let me see", "hold on")
+SOFT = {"so", "okay", "ok", "right", "yeah", "like", "anyway", "basically", "actually"}
 
-def parse_ts(s):
-    s = s.strip().replace(",", ".")
-    p = s.split(":")
-    return int(p[0]) * 3600 + int(p[1]) * 60 + float(p[2]) if len(p) == 3 else int(p[0]) * 60 + float(p[1])
 
-def load(path):
-    raw = open(path, encoding="utf-8", errors="replace").read()
-    if path.endswith(".json"):
-        d = json.loads(raw)
-        segs = d.get("segments", d if isinstance(d, list) else [])
-        return [(float(s["start"]), float(s["end"]), (s.get("text") or "").strip()) for s in segs]
-    cues, cur = [], None
-    for line in raw.splitlines():
-        m = re.match(r"\s*(\d[\d:.,]+)\s*-->\s*(\d[\d:.,]+)", line)
-        if m:
-            cur = [parse_ts(m.group(1)), parse_ts(m.group(2)), []]
-            cues.append(cur)
-        elif cur is not None and line.strip() and not line.strip().isdigit():
-            cur[2].append(line.strip())
-    return [(a, b, " ".join(t)) for a, b, t in cues if t]
+def is_filler(text):
+    t = " " + " ".join(re.findall(r"[a-z']+", text.lower())) + " "
+    for ph in STRICT_PHRASES:
+        t = t.replace(" " + ph + " ", " <strict> ")
+    toks = t.split()
+    if not toks:
+        return False
+    if all(w in STRICT or w == "<strict>" for w in toks):
+        return True
+    return len(toks) >= 2 and all(w in STRICT or w in SOFT or w == "<strict>" for w in toks)
+
+
+from transcript import load  # noqa: E402  (shared parser, copied into each skill)
 
 def norm(t): return re.sub(r"[^a-z ]", "", t.lower()).split()
 
@@ -51,7 +50,7 @@ def main():
     dur = cues[-1][1]
     cuts = []
     for i, (s, e, t) in enumerate(cues):
-        if FILLER_ONLY.match(t):
+        if is_filler(t):
             cuts.append({"kind": "FILLER", "start": s, "end": e, "why": t.strip()[:48]})
         if i:
             gap = s - cues[i - 1][1]
@@ -62,9 +61,9 @@ def main():
         # A restart is compared against the last cue that was actually SPEECH. Comparing against
         # the literal previous cue misses every retake with an "um" between the two attempts, which
         # is most of them.
-        if t.strip() and not FILLER_ONLY.match(t):
+        if t.strip() and not is_filler(t):
             j = i - 1
-            while j >= 0 and (FILLER_ONLY.match(cues[j][2]) or not cues[j][2].strip()): j -= 1
+            while j >= 0 and (is_filler(cues[j][2]) or not cues[j][2].strip()): j -= 1
             if j >= 0:
                 a1, b1 = norm(cues[j][2])[:5], norm(t)[:5]
                 if len(a1) >= 3 and a1 == b1:
@@ -72,13 +71,24 @@ def main():
                                  "why": f'restart of "{" ".join(a1)}"'})
     cuts = [c for c in cuts if c["end"] > c["start"]]
     cuts.sort(key=lambda c: c["start"])
+    # overlapping cuts are one cut: merge so the removed total is never double counted
+    merged = []
+    for c in cuts:
+        if merged and c["start"] < merged[-1]["end"]:
+            m = merged[-1]
+            m["end"] = max(m["end"], c["end"])
+            if c["kind"] not in m["kind"].split("+"): m["kind"] += "+" + c["kind"]
+            m["why"] += "; " + c["why"]
+        else:
+            merged.append(dict(c))
+    cuts = merged
     removed = sum(c["end"] - c["start"] for c in cuts)
     if as_json:
         print(json.dumps({"source": a[0], "duration": dur, "cuts": cuts,
                           "removed": round(removed, 3), "out": round(dur - removed, 3)}, indent=1)); return
     print(f"\n  {a[0]}   {dur:.2f}s in, {len(cues)} cues, dead-air floor {floor}s\n")
     for c in cuts:
-        print(f"    {c['kind']:<7} {c['start']:8.2f} -> {c['end']:8.2f}   {c['end']-c['start']:5.2f}s   {c['why']}")
+        print(f"    {c['kind']:<12} {c['start']:8.2f} -> {c['end']:8.2f}   {c['end']-c['start']:5.2f}s   {c['why']}")
     print(f"\n  {len(cuts)} cuts, {removed:.2f}s removed, {dur - removed:.2f}s out "
           f"({removed / dur * 100:.1f}% shorter)\n")
 
